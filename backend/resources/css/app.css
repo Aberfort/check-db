@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+@source "../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php";
+@source "../../storage/framework/views/*.php";
+@source "../**/*.blade.php";
+@source "../**/*.js";
+@source "../**/*.jsx";
+
+/* Токени теми (v4 CSS-first) */
+@theme {
+    --color-brand-50:  #f3f6f5;
+    --color-brand-100: #e2ebe8;
+    --color-brand-200: #c3d6d0;
+    --color-brand-300: #9ebbb2;
+    --color-brand-400: #6f9588;
+    --color-brand:     #3f5850;
+    --color-brand-600: #365047;
+    --color-brand-700: #2f443d;
+    --color-brand-800: #273731;
+    --color-brand-900: #1f2b26;
+
+    --color-ink:       #0f1a17;
+    --color-ink-2:     #162421;
+}
+
+@layer base {
+    html, body { height: 100%; }
+    body { @apply bg-brand-50 text-ink; }
+}

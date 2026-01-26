@@ -1,0 +1,100 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "8085:80"
+    volumes:
+      - ./backend:/var/www/html:delegated
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
+    networks:
+      - app_network
+
+  app:
+    build:
+      context: ./docker/php
+      dockerfile: Dockerfile
+    working_dir: /var/www/html
+    volumes:
+      - ./backend:/var/www/html:delegated
+      - ./.env:/var/www/html/.env
+    environment:
+      APP_ENV: local
+      PHP_MEMORY_LIMIT: 1024M
+    depends_on:
+      - mysql
+      - redis
+    networks:
+      - app_network
+
+  queue:
+    build:
+      context: ./docker/php
+      dockerfile: Dockerfile
+    working_dir: /var/www/html
+    volumes:
+      - ./backend:/var/www/html:delegated
+    command: php artisan queue:work --sleep=1 --tries=1 --timeout=0
+    depends_on:
+      - app
+      - redis
+      - mysql
+    networks:
+      - app_network
+
+  node:
+    image: node:20-alpine
+    working_dir: /var/www/html
+    volumes:
+      - ./backend:/var/www/html:delegated
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    ports:
+      - "5173:5173"
+    depends_on:
+      - app
+    networks:
+      - app_network
+
+  mysql:
+    image: mysql:8.4
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - app_network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    networks:
+      - app_network
+
+  scheduler:
+    build:
+      context: ./docker/php
+      dockerfile: Dockerfile
+    working_dir: /var/www/html
+    volumes:
+      - ./backend:/var/www/html:delegated
+    command: sh -c "php artisan schedule:work"
+    depends_on:
+      - app
+      - mysql
+      - redis
+    networks:
+      - app_network
+
+volumes:
+  mysql_data:
+
+networks:
+  app_network:
+    driver: bridge
