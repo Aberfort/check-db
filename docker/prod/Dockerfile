@@ -5,7 +5,10 @@
 FROM node:20-alpine AS frontend
 WORKDIR /app
 COPY backend/package.json backend/package-lock.json ./
-RUN npm ci
+# `npm ci` installs only the platform variants recorded in the lockfile, and
+# rollup ships its binary as a per-platform optional dependency — so a lockfile
+# written on one architecture breaks the build on another.
+RUN npm install --no-audit --no-fund
 COPY backend/ ./
 RUN npm run build
 

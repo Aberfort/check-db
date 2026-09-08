@@ -53,7 +53,9 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
 
-      - run: npm ci
+      # See docker/prod/Dockerfile — rollup's per-platform binary is an optional
+      # dependency that `npm ci` will not resolve across architectures.
+      - run: npm install --no-audit --no-fund
       - run: npm run build
 
   image:
