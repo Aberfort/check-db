@@ -18,7 +18,7 @@ class UploadDbRequest extends FormRequest
             'file' => [
                 'required',
                 'file',
-                'max:' . (int) config('db_audit.limits.max_upload_kb', 204800),
+                'max:'.(int) config('db_audit.limits.max_upload_kb', 204800),
                 'mimes:db,sqlite,sqlite3,zip,sql',
             ],
             'profile' => ['nullable', 'string', Rule::in(array_keys((array) config('db_audit.profiles', [])))],

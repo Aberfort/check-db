@@ -44,11 +44,11 @@ class ConstantColumnCheck extends BaseCheck
 
             $selects = [];
             foreach ($columns as $i => $column) {
-                $selects[] = 'COUNT(DISTINCT ' . $db->quoteIdent($column['name']) . ") AS c{$i}";
+                $selects[] = 'COUNT(DISTINCT '.$db->quoteIdent($column['name']).") AS c{$i}";
             }
 
             $counts = $db->query(
-                'SELECT ' . implode(', ', $selects) . ' FROM ' . $db->quoteIdent($table)
+                'SELECT '.implode(', ', $selects).' FROM '.$db->quoteIdent($table)
             )[0] ?? [];
 
             foreach ($columns as $i => $column) {
@@ -59,8 +59,8 @@ class ConstantColumnCheck extends BaseCheck
                 }
 
                 $value = $db->scalar(
-                    'SELECT ' . $db->quoteIdent($column['name']) . ' FROM ' . $db->quoteIdent($table)
-                    . ' WHERE ' . $db->quoteIdent($column['name']) . ' IS NOT NULL LIMIT 1'
+                    'SELECT '.$db->quoteIdent($column['name']).' FROM '.$db->quoteIdent($table)
+                    .' WHERE '.$db->quoteIdent($column['name']).' IS NOT NULL LIMIT 1'
                 );
 
                 $res->add(new CheckFinding(

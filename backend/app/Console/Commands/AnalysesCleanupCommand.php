@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Storage;
 class AnalysesCleanupCommand extends Command
 {
     protected $signature = 'analyses:cleanup {--dry-run : Тільки показати, що буде видалено}';
+
     protected $description = 'Cleanup old analyses: DB rows, findings, uploaded files';
 
     public function handle(): int
@@ -23,9 +24,9 @@ class AnalysesCleanupCommand extends Command
         $cutoff = Carbon::now()->subDays(max(1, $ttlDays));
 
         $q = Analysis::query()
-                     ->where('created_at', '<', $cutoff)
-                     ->orderBy('created_at')
-                     ->limit(max(1, $limit));
+            ->where('created_at', '<', $cutoff)
+            ->orderBy('created_at')
+            ->limit(max(1, $limit));
 
         if ($onlyFinished) {
             $q->whereIn('status', ['success', 'error']);
@@ -35,16 +36,17 @@ class AnalysesCleanupCommand extends Command
 
         if ($items->isEmpty()) {
             $this->info('Nothing to cleanup.');
+
             return self::SUCCESS;
         }
 
         $dry = (bool) $this->option('dry-run');
 
-        $this->line('Cutoff: ' . $cutoff->toDateTimeString());
-        $this->line('Found: ' . $items->count());
+        $this->line('Cutoff: '.$cutoff->toDateTimeString());
+        $this->line('Found: '.$items->count());
 
         foreach ($items as $a) {
-            $dir = 'uploads/analyses/' . $a->id;
+            $dir = 'uploads/analyses/'.$a->id;
 
             $this->line(sprintf(
                 '- #%d status=%s created=%s dir=%s stored=%s',

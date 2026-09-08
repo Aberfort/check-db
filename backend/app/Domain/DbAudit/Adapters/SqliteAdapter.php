@@ -27,7 +27,7 @@ class SqliteAdapter implements DbAdapter
             return $this->columnCache[$table];
         }
 
-        $rows = $this->query('PRAGMA table_info(' . $this->quoteIdent($table) . ')');
+        $rows = $this->query('PRAGMA table_info('.$this->quoteIdent($table).')');
 
         return $this->columnCache[$table] = array_map(static fn ($r) => [
             'name' => (string) $r['name'],
@@ -40,7 +40,7 @@ class SqliteAdapter implements DbAdapter
 
     public function foreignKeys(string $table): array
     {
-        $rows = $this->query('PRAGMA foreign_key_list(' . $this->quoteIdent($table) . ')');
+        $rows = $this->query('PRAGMA foreign_key_list('.$this->quoteIdent($table).')');
 
         return array_map(static fn ($r) => [
             'column' => (string) ($r['from'] ?? ''),
@@ -52,7 +52,7 @@ class SqliteAdapter implements DbAdapter
 
     public function indexes(string $table): array
     {
-        $list = $this->query('PRAGMA index_list(' . $this->quoteIdent($table) . ')');
+        $list = $this->query('PRAGMA index_list('.$this->quoteIdent($table).')');
 
         $out = [];
         foreach ($list as $idx) {
@@ -61,7 +61,7 @@ class SqliteAdapter implements DbAdapter
                 continue;
             }
 
-            $info = $this->query('PRAGMA index_info(' . $this->quoteIdent($name) . ')');
+            $info = $this->query('PRAGMA index_info('.$this->quoteIdent($name).')');
 
             $out[] = [
                 'name' => $name,
@@ -86,7 +86,7 @@ class SqliteAdapter implements DbAdapter
 
     public function count(string $table): int
     {
-        return (int) $this->scalar('SELECT COUNT(*) FROM ' . $this->quoteIdent($table));
+        return (int) $this->scalar('SELECT COUNT(*) FROM '.$this->quoteIdent($table));
     }
 
     public function query(string $sql, array $bindings = []): array
@@ -118,6 +118,6 @@ class SqliteAdapter implements DbAdapter
      */
     public function quoteIdent(string $name): string
     {
-        return '"' . str_replace('"', '""', $name) . '"';
+        return '"'.str_replace('"', '""', $name).'"';
     }
 }

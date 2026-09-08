@@ -37,6 +37,7 @@ abstract class BaseCheck implements DbCheck
 
     /**
      * SQLite resolves a declared column type to one of five affinities.
+     *
      * @see https://sqlite.org/datatype3.html#determination_of_column_affinity
      */
     protected function affinityOf(string $declaredType): string

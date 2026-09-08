@@ -28,7 +28,7 @@ trait BuildsSqliteFixtures
     protected function messagesOf(\App\Domain\DbAudit\DTO\CheckResult $result): array
     {
         return array_map(
-            fn ($f) => (string) __('findings.' . $f->messageKey, $f->params),
+            fn ($f) => (string) __('findings.'.$f->messageKey, $f->params),
             $result->findings
         );
     }

@@ -9,5 +9,5 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('analyses:cleanup')
-        ->dailyAt('03:10')
-        ->sendOutputTo(storage_path('logs/analyses-cleanup.log'));
+    ->dailyAt('03:10')
+    ->sendOutputTo(storage_path('logs/analyses-cleanup.log'));

@@ -27,12 +27,12 @@ class MakeSampleDatabaseCommand extends Command
             unlink($path);
         }
 
-        $pdo = new PDO('sqlite:' . $path, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        $pdo = new PDO('sqlite:'.$path, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 
         $this->schema($pdo);
         $this->seed($pdo);
 
-        $this->info('Sample database written to ' . $path);
+        $this->info('Sample database written to '.$path);
 
         return self::SUCCESS;
     }
@@ -132,11 +132,11 @@ class MakeSampleDatabaseCommand extends Command
         );
 
         for ($i = 1; $i <= 120; $i++) {
-            $items->execute([$i, 'SKU-' . (($i % 12) + 1), 1 + ($i % 3), 9.99]);
+            $items->execute([$i, 'SKU-'.(($i % 12) + 1), 1 + ($i % 3), 9.99]);
 
             // The same line stored twice, indistinguishable without a key.
             if ($i % 9 === 0) {
-                $items->execute([$i, 'SKU-' . (($i % 12) + 1), 1 + ($i % 3), 9.99]);
+                $items->execute([$i, 'SKU-'.(($i % 12) + 1), 1 + ($i % 3), 9.99]);
             }
         }
 
@@ -147,8 +147,8 @@ class MakeSampleDatabaseCommand extends Command
         for ($i = 1; $i <= 12; $i++) {
             $products->execute([
                 $i,
-                'SKU-' . $i,
-                'Product ' . $i,
+                'SKU-'.$i,
+                'Product '.$i,
                 // Descriptions were never written for almost the whole catalogue.
                 $i === 1 ? 'The only product anyone described.' : null,
                 // A flag nobody ever flipped.

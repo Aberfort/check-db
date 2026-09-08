@@ -35,19 +35,19 @@ class DbInputPreparerService implements DbInputPreparer
 
         $zipAbs = $disk->path($uploadedPath);
 
-        $tmpDirRel = 'uploads/analyses_tmp/' . $analysis->id . '_' . Str::random(8);
+        $tmpDirRel = 'uploads/analyses_tmp/'.$analysis->id.'_'.Str::random(8);
         $tmpDirAbs = $disk->path($tmpDirRel);
 
-        if (!is_dir($tmpDirAbs) && !mkdir($tmpDirAbs, 0775, true) && !is_dir($tmpDirAbs)) {
+        if (! is_dir($tmpDirAbs) && ! mkdir($tmpDirAbs, 0775, true) && ! is_dir($tmpDirAbs)) {
             throw new \RuntimeException('Не вдалося створити тимчасову директорію.');
         }
 
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
         if ($zip->open($zipAbs) !== true) {
             throw new \RuntimeException('Не вдалося відкрити ZIP архів.');
         }
 
-        if (!$zip->extractTo($tmpDirAbs)) {
+        if (! $zip->extractTo($tmpDirAbs)) {
             $zip->close();
             throw new \RuntimeException('Не вдалося розпакувати ZIP архів.');
         }
@@ -55,21 +55,21 @@ class DbInputPreparerService implements DbInputPreparer
 
         $candidates = $this->findDbCandidates($tmpDirAbs);
 
-        if (!$candidates) {
+        if (! $candidates) {
             throw new \RuntimeException('У ZIP не знайдено .db/.sqlite/.sqlite3 файлів.');
         }
 
-        usort($candidates, fn($a, $b) => filesize($b) <=> filesize($a));
+        usort($candidates, fn ($a, $b) => filesize($b) <=> filesize($a));
         $pickedAbs = $candidates[0];
 
-        $targetRel = 'uploads/analyses/' . $analysis->id . '/extracted.db';
+        $targetRel = 'uploads/analyses/'.$analysis->id.'/extracted.db';
         $targetAbs = $disk->path($targetRel);
 
-        if (!is_dir(dirname($targetAbs))) {
+        if (! is_dir(dirname($targetAbs))) {
             mkdir(dirname($targetAbs), 0775, true);
         }
 
-        if (!copy($pickedAbs, $targetAbs)) {
+        if (! copy($pickedAbs, $targetAbs)) {
             throw new \RuntimeException('Не вдалося зберегти витягнуту базу.');
         }
 
@@ -86,9 +86,11 @@ class DbInputPreparerService implements DbInputPreparer
         $it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dirAbs));
 
         foreach ($it as $file) {
-            if (!$file->isFile()) continue;
+            if (! $file->isFile()) {
+                continue;
+            }
             $ext = strtolower($file->getExtension());
-            if (in_array($ext, ['db','sqlite','sqlite3'], true)) {
+            if (in_array($ext, ['db', 'sqlite', 'sqlite3'], true)) {
                 $out[] = $file->getPathname();
             }
         }
@@ -103,15 +105,15 @@ class DbInputPreparerService implements DbInputPreparer
         $sqlAbs = $disk->path($uploadedPath);
 
         // цільова db
-        $targetRel = 'uploads/analyses/' . $analysis->id . '/imported.db';
+        $targetRel = 'uploads/analyses/'.$analysis->id.'/imported.db';
         $targetAbs = $disk->path($targetRel);
 
-        if (!is_dir(dirname($targetAbs))) {
+        if (! is_dir(dirname($targetAbs))) {
             mkdir(dirname($targetAbs), 0775, true);
         }
 
         // створюємо порожню sqlite (файл буде створено при підключенні)
-        $pdo = new \PDO('sqlite:' . $targetAbs);
+        $pdo = new \PDO('sqlite:'.$targetAbs);
         $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
         $pdo->exec('PRAGMA foreign_keys = OFF;');
         $pdo->exec('PRAGMA journal_mode = WAL;');
@@ -122,7 +124,9 @@ class DbInputPreparerService implements DbInputPreparer
         $count = 0;
         foreach ($this->iterateStatements($sqlAbs) as $stmt) {
             $stmt = $this->normalizeStatement($stmt);
-            if ($stmt === '') continue;
+            if ($stmt === '') {
+                continue;
+            }
 
             // SQLite не любить деякі mysql-специфіки
             // Ми “мʼяко” пропускаємо те, що не виконується
@@ -136,7 +140,7 @@ class DbInputPreparerService implements DbInputPreparer
 
                 if ($isImportant) {
                     $pdo->rollBack();
-                    throw new \RuntimeException('SQL імпорт: помилка виконання statement: ' . $e->getMessage());
+                    throw new \RuntimeException('SQL імпорт: помилка виконання statement: '.$e->getMessage());
                 }
                 // інше мовчки ігноруємо
             }
@@ -159,12 +163,13 @@ class DbInputPreparerService implements DbInputPreparer
 
     /**
      * Стрімово читає sql файл, повертає statements (розділення по ';' з урахуванням рядків).
+     *
      * @return \Generator<int, string>
      */
     private function iterateStatements(string $sqlAbs): \Generator
     {
         $fh = fopen($sqlAbs, 'rb');
-        if (!$fh) {
+        if (! $fh) {
             throw new \RuntimeException('Не вдалося відкрити .sql файл.');
         }
 
@@ -176,9 +181,11 @@ class DbInputPreparerService implements DbInputPreparer
         $inBlockComment = false;
         $prev = '';
 
-        while (!feof($fh)) {
+        while (! feof($fh)) {
             $chunk = fread($fh, 1024 * 1024); // 1MB
-            if ($chunk === false) break;
+            if ($chunk === false) {
+                break;
+            }
 
             $len = strlen($chunk);
             for ($i = 0; $i < $len; $i++) {
@@ -187,52 +194,68 @@ class DbInputPreparerService implements DbInputPreparer
 
                 // обробка коментарів
                 if ($inLineComment) {
-                    if ($ch === "\n") $inLineComment = false;
+                    if ($ch === "\n") {
+                        $inLineComment = false;
+                    }
                     $prev = $ch;
+
                     continue;
                 }
                 if ($inBlockComment) {
-                    if ($prev === '*' && $ch === '/') $inBlockComment = false;
+                    if ($prev === '*' && $ch === '/') {
+                        $inBlockComment = false;
+                    }
                     $prev = $ch;
+
                     continue;
                 }
 
                 // старт коментарів (лише якщо не в рядку)
-                if (!$inSingle && !$inDouble && !$inBacktick) {
+                if (! $inSingle && ! $inDouble && ! $inBacktick) {
                     if ($ch === '-' && $next === '-') { // -- comment
                         $inLineComment = true;
                         $i++; // пропустити наступний '-'
                         $prev = '';
+
                         continue;
                     }
                     if ($ch === '#') { // # comment
                         $inLineComment = true;
                         $prev = $ch;
+
                         continue;
                     }
                     if ($ch === '/' && $next === '*') { // /* comment */
                         $inBlockComment = true;
                         $i++; // пропустити '*'
                         $prev = '';
+
                         continue;
                     }
                 }
 
                 // трекінг рядкових літералів
-                if ($ch === "'" && !$inDouble && !$inBacktick) {
-                    if ($prev !== '\\') $inSingle = !$inSingle;
-                } elseif ($ch === '"' && !$inSingle && !$inBacktick) {
-                    if ($prev !== '\\') $inDouble = !$inDouble;
-                } elseif ($ch === '`' && !$inSingle && !$inDouble) {
-                    $inBacktick = !$inBacktick;
+                if ($ch === "'" && ! $inDouble && ! $inBacktick) {
+                    if ($prev !== '\\') {
+                        $inSingle = ! $inSingle;
+                    }
+                } elseif ($ch === '"' && ! $inSingle && ! $inBacktick) {
+                    if ($prev !== '\\') {
+                        $inDouble = ! $inDouble;
+                    }
+                } elseif ($ch === '`' && ! $inSingle && ! $inDouble) {
+                    $inBacktick = ! $inBacktick;
                 }
 
                 // кінець statement
-                if ($ch === ';' && !$inSingle && !$inDouble && !$inBacktick) {
+                if ($ch === ';' && ! $inSingle && ! $inDouble && ! $inBacktick) {
                     $stmt = trim($buffer);
                     $buffer = '';
-                    if ($stmt !== '') yield $stmt;
+                    if ($stmt !== '') {
+                        yield $stmt;
+                    }
                     $prev = '';
+
                     continue;
                 }
 
@@ -244,7 +267,9 @@ class DbInputPreparerService implements DbInputPreparer
         fclose($fh);
 
         $tail = trim($buffer);
-        if ($tail !== '') yield $tail;
+        if ($tail !== '') {
+            yield $tail;
+        }
     }
 
     /**
@@ -253,7 +278,9 @@ class DbInputPreparerService implements DbInputPreparer
     private function normalizeStatement(string $stmt): string
     {
         $s = trim($stmt);
-        if ($s === '') return '';
+        if ($s === '') {
+            return '';
+        }
 
         // прибрати SET/LOCK/UNLOCK/DELIMITER/START TRANSACTION з дампів
         $upper = strtoupper($s);
@@ -267,7 +294,9 @@ class DbInputPreparerService implements DbInputPreparer
             'ROLLBACK',
         ];
         foreach ($skipPrefixes as $p) {
-            if (str_starts_with($upper, $p)) return '';
+            if (str_starts_with($upper, $p)) {
+                return '';
+            }
         }
 
         // MySQL backticks -> SQLite double quotes

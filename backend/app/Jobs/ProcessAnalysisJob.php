@@ -94,7 +94,7 @@ class ProcessAnalysisJob implements ShouldQueue
      */
     private function connect(string $absolutePath): PDO
     {
-        $pdo = new PDO('sqlite:' . $absolutePath, null, null, [
+        $pdo = new PDO('sqlite:'.$absolutePath, null, null, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         ]);

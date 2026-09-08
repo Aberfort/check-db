@@ -2,12 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\ProcessAnalysisJob;
 use App\Models\Analysis;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
-use App\Jobs\ProcessAnalysisJob;
 use PDO;
 use Tests\TestCase;
 
@@ -112,6 +112,24 @@ class AnalysisApiTest extends TestCase
             ->assertJsonPath('data.by_check.foreign_keys.critical', 1);
     }
 
+    public function test_it_audits_the_bundled_sample_database(): void
+    {
+        Storage::fake('local');
+
+        $this->postJson('/api/analyses/sample', ['profile' => 'thorough'])
+            ->assertCreated()
+            ->assertJsonPath('data.original_name', 'shop-demo.sqlite');
+
+        $analysis = Analysis::first();
+
+        // The sample carries one deliberate flaw per check, so a clean run here
+        // would mean the checks stopped detecting anything.
+        $this->assertSame('success', $analysis->status);
+        $this->assertSame('failed', $analysis->summary['checks']['foreign_keys']['status']);
+        $this->assertSame('failed', $analysis->summary['checks']['type_mismatch']['status']);
+        $this->assertSame('failed', $analysis->summary['checks']['missing_primary_key']['status']);
+    }
+
     public function test_it_returns_a_structured_error_for_a_missing_analysis(): void
     {
         $this->getJson('/api/analyses/999')
@@ -130,9 +148,9 @@ class AnalysisApiTest extends TestCase
     /** A tiny database carrying one deliberate orphan row. */
     private function sqliteUpload(): UploadedFile
     {
-        $path = tempnam(sys_get_temp_dir(), 'fixture') . '.sqlite';
+        $path = tempnam(sys_get_temp_dir(), 'fixture').'.sqlite';
 
-        $pdo = new PDO('sqlite:' . $path, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        $pdo = new PDO('sqlite:'.$path, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
         $pdo->exec('CREATE TABLE customers (id INTEGER PRIMARY KEY, email TEXT NOT NULL)');
         $pdo->exec('CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER REFERENCES customers(id))');
         $pdo->exec("INSERT INTO customers (id, email) VALUES (1, 'a@example.test')");

@@ -50,8 +50,8 @@ class DuplicateRowsCheck extends BaseCheck
             $groupBy = implode(', ', $quoted);
 
             $rows = $db->query(
-                'SELECT ' . $groupBy . ', COUNT(*) AS occurrences FROM ' . $db->quoteIdent($table)
-                . ' GROUP BY ' . $groupBy . ' HAVING occurrences > 1 ORDER BY occurrences DESC LIMIT 20'
+                'SELECT '.$groupBy.', COUNT(*) AS occurrences FROM '.$db->quoteIdent($table)
+                .' GROUP BY '.$groupBy.' HAVING occurrences > 1 ORDER BY occurrences DESC LIMIT 20'
             );
 
             foreach ($rows as $row) {
@@ -84,7 +84,7 @@ class DuplicateRowsCheck extends BaseCheck
             $value = is_scalar($value) ? (string) $value : null;
 
             if ($value !== null && mb_strlen($value) > 120) {
-                $value = mb_substr($value, 0, 120) . '…';
+                $value = mb_substr($value, 0, 120).'…';
             }
 
             $out[$key] = $value;

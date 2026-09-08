@@ -61,9 +61,9 @@ class ContentKeywordsCheck extends BaseCheck
                     $select = $hasEndpoint ? '"endpoint" AS endpoint, ' : '';
 
                     $rows = $db->query(
-                        'SELECT ' . $select . $db->quoteIdent($column) . ' AS value FROM ' . $db->quoteIdent($table)
-                        . ' WHERE CAST(' . $db->quoteIdent($column) . ' AS TEXT) LIKE :needle LIMIT 50',
-                        [':needle' => '%' . $needle . '%']
+                        'SELECT '.$select.$db->quoteIdent($column).' AS value FROM '.$db->quoteIdent($table)
+                        .' WHERE CAST('.$db->quoteIdent($column).' AS TEXT) LIKE :needle LIMIT 50',
+                        [':needle' => '%'.$needle.'%']
                     );
 
                     foreach ($rows as $row) {

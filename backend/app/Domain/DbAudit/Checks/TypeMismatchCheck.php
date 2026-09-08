@@ -51,12 +51,12 @@ class TypeMismatchCheck extends BaseCheck
             // One aggregate pass per table rather than one query per column.
             $selects = [];
             foreach ($numeric as $i => $name) {
-                $selects[] = 'SUM(CASE WHEN typeof(' . $db->quoteIdent($name)
-                    . ") IN ('text','blob') THEN 1 ELSE 0 END) AS c{$i}";
+                $selects[] = 'SUM(CASE WHEN typeof('.$db->quoteIdent($name)
+                    .") IN ('text','blob') THEN 1 ELSE 0 END) AS c{$i}";
             }
 
             $counts = $db->query(
-                'SELECT ' . implode(', ', $selects) . ' FROM ' . $db->quoteIdent($table)
+                'SELECT '.implode(', ', $selects).' FROM '.$db->quoteIdent($table)
             )[0] ?? [];
 
             foreach ($numeric as $i => $name) {
@@ -66,8 +66,8 @@ class TypeMismatchCheck extends BaseCheck
                 }
 
                 $sample = $db->query(
-                    'SELECT ' . $db->quoteIdent($name) . ' AS v FROM ' . $db->quoteIdent($table)
-                    . ' WHERE typeof(' . $db->quoteIdent($name) . ") IN ('text','blob') LIMIT 1"
+                    'SELECT '.$db->quoteIdent($name).' AS v FROM '.$db->quoteIdent($table)
+                    .' WHERE typeof('.$db->quoteIdent($name).") IN ('text','blob') LIMIT 1"
                 );
 
                 $res->add(new CheckFinding(

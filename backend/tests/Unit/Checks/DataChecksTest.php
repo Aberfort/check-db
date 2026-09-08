@@ -86,7 +86,7 @@ class DataChecksTest extends TestCase
         $db = $this->fixture(
             'CREATE TABLE products (id INTEGER PRIMARY KEY, description TEXT)',
             "INSERT INTO products (description) VALUES ('written'), (NULL), (NULL), (NULL),"
-                . ' (NULL), (NULL), (NULL), (NULL), (NULL), (NULL)',
+                .' (NULL), (NULL), (NULL), (NULL), (NULL), (NULL)',
         );
 
         $result = (new EmptyValuesCheck)->run($db);

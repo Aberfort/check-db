@@ -1,263 +1,142 @@
-# Check-DB — Database Health Checker (Laravel + React + Docker)
+# check-db
 
-Веб-інтерфейс для завантаження SQLite БД (`.db` / `.sqlite`), запуску асинхронного аналізу та перегляду результатів у вигляді дашборда з деталізацією проблем.
+**A data-quality audit for SQLite files.** Upload a `.db`, and it is checked against
+its own schema — foreign keys, declared types, primary keys, indexes — then reported
+back with a score, a per-check breakdown, and the exact row behind every finding.
+
+🔗 **[Live demo](https://check-db-production.up.railway.app)** — the landing page runs
+it on a bundled sample database, no upload needed.
 
 ---
 
-## 0) Вимоги
+## Why it exists
 
-Переконайся, що встановлено:
+SQLite will store whatever you give it. A column declared `REAL` accepts the string
+`"pending"`. `NOT NULL` is satisfied by an empty string. Foreign keys are only enforced
+if the connection opted in — and most exports did not. The result is a file that opens
+fine and reads fine, right up until a `SUM()` returns nonsense or a join silently
+drops rows.
 
-- **Git**
-- **Docker Desktop** (або Docker Engine) + **Docker Compose v2**
-- (Опційно) `make` — якщо в репозиторії є `Makefile` і ти хочеш запускати команди через `make`.
+This tool looks for exactly those problems, and it needs to know nothing about your
+application to do it: every check is driven by the schema inside the file you upload.
 
-Перевірка:
-```bash
-docker --version
-docker compose version
-git --version
+## What it checks
+
+| Check | What it finds |
+|---|---|
+| Storage integrity | A corrupted or truncated file, via SQLite's own `integrity_check` |
+| Foreign key violations | Rows pointing at parents that no longer exist, discovered through `foreign_key_check` |
+| Type mismatches | Text sitting in a column whose declared affinity is numeric |
+| Empty values | `NOT NULL` columns filled with blanks; nullable columns never populated |
+| Duplicate rows | Rows identical once the primary key is ignored |
+| Missing primary keys | Tables that cannot be addressed or updated row by row |
+| Unindexed foreign keys | SQLite never indexes the child side, so joins and parent deletes become scans |
+| Constant columns | One value in every row — a field nobody ever used |
+| Empty tables | Defined in the schema, never populated |
+
+Checks run in profiles (`quick`, `standard`, `thorough`) and a `crawl` profile adds two
+checks for website-crawler exports, which skip themselves when the schema doesn't match.
+
+## How the score works
+
+The score is **the weighted share of checks that came back clean**, not a count of
+findings:
+
+```
+score = 100 × (1 − Σ weight(failed check) × severity_cost / Σ weight(check run))
 ```
 
----
+A critical result costs a check's full weight, a warning 40% of it, and informational
+findings cost nothing. Skipped checks are excluded rather than counted as passes.
 
-## 1) Клонування проекту
+This matters because the obvious alternative — scoring by how many rows are affected —
+makes results incomparable: a 200-row file with two problems would score 0 while a
+20-million-row file with five hundred would score 99. Here the same problems produce
+the same score at any scale, so two runs can be read against each other.
 
-```bash
-git clone <YOUR_REPO_URL>
-cd <PROJECT_DIR>
+## Architecture
+
+```mermaid
+flowchart LR
+    U[Upload] --> API[Laravel API]
+    API --> S[(Storage)]
+    API --> Q[Queue]
+    Q --> J[ProcessAnalysisJob]
+    J --> P[Input preparer<br/>zip · SQL dump · db]
+    P --> A[SqliteAdapter<br/>read-only PDO]
+    A --> C[Check registry]
+    C --> R[AnalysisRunner]
+    R --> DB[(analyses · findings)]
+    API -.server-sent events.-> UI[React report]
+    DB --> UI
 ```
 
----
+A few decisions worth calling out:
 
-## 2) Старт контейнерів
+- **Findings are stored language-neutral** — a translation key plus its parameters —
+  so switching the UI between English and Ukrainian re-renders existing results
+  instead of re-running the audit.
+- **The uploaded file is opened read-only** (`PRAGMA query_only`, `trusted_schema=OFF`),
+  and every identifier from its schema is quoted before it reaches a query, because
+  table and column names in an uploaded file are attacker-controlled input.
+- **Counts are aggregated in SQL.** Histograms group on an indexed `bucket` column
+  rather than paging findings to the browser to be tallied there.
+- **Checks isolate failures per table**, so one virtual or `WITHOUT ROWID` table
+  cannot abort a whole run.
+- **Adding a check** means implementing `DbCheck`, registering it in
+  `config/db_audit.php`, and adding its title to `lang/*/checks.php`. Nothing in the
+  frontend changes — it reads the catalogue from `/api/meta`.
 
-> У docker-compose є сервіси: `nginx`, `app`, `queue`, `node`, `mysql`, `redis` , `scheduler`.
+## Stack
 
-Запуск:
+Laravel 12 · PHP 8.3 · React 19 · Tailwind v4 · MySQL + Redis (dev) · Docker
+
+## Running it locally
+
 ```bash
+git clone git@github.com:Aberfort/check-db.git
+cd check-db
+cp .env.example .env
 docker compose up -d
-```
-
-Перевірити статус:
-```bash
-docker compose ps
-```
-
-Логи (за потреби):
-```bash
-docker compose logs -f app
-docker compose logs -f queue
-docker compose logs -f nginx
-docker compose logs -f node
-docker compose logs -f mysql
-```
-
----
-
-## 3) Backend (Laravel): залежності + env
-
-### 3.1 Composer install
-```bash
 docker compose exec app composer install
-```
-
-### 3.2 .env
-Якщо `.env` ще немає — створи з прикладу:
-```bash
-docker compose exec app bash -lc "cp -n .env.example .env || true"
-```
-
-Згенеруй ключ:
-```bash
 docker compose exec app php artisan key:generate
-```
-
-> ⚠️ У цьому проекті база піднята в Docker як **mysql** (service name `mysql`).
-> Переконайся, що в `.env` вказано:
-> - `DB_HOST=mysql`
-> - `DB_PORT=3306`
-> - `DB_DATABASE=check_db`
-> - `DB_USERNAME=check_adm`
-> - `DB_PASSWORD=...` (пароль з docker-compose)
-
----
-
-## 4) Міграції + базова ініціалізація
-
-```bash
 docker compose exec app php artisan migrate
+docker compose exec app php artisan db:make-sample
 ```
 
-Якщо є seeders:
+The app is at **http://localhost:8085**, the Vite dev server at **http://localhost:5173**.
+
+## Tests
+
 ```bash
-docker compose exec app php artisan db:seed
+docker compose exec app php artisan test
 ```
 
----
+Each check is tested against a purpose-built in-memory SQLite fixture, including the
+cases it must *not* flag — text dates in a `DATETIME` column are normal SQLite usage,
+not a type error, and flagging them would bury the real findings.
 
-## 5) Frontend (Vite + React): dev server
+## API
 
-У проекті `node` сервіс вже виконує:
-`npm install && npm run dev -- --host 0.0.0.0 --port 5173`
+| Method | Endpoint | |
+|---|---|---|
+| `GET` | `/api/meta` | Profiles and the check catalogue, translated |
+| `POST` | `/api/analyses` | Upload a file (`file`, `profile`) |
+| `POST` | `/api/analyses/sample` | Audit the bundled sample |
+| `GET` | `/api/analyses/{id}` | Status and summary |
+| `GET` | `/api/analyses/{id}/events` | Progress as server-sent events |
+| `GET` | `/api/analyses/{id}/findings` | Paginated findings, `?lang=uk` for Ukrainian |
+| `GET` | `/api/analyses/{id}/findings/summary` | Counts aggregated in SQL |
+| `GET` | `/api/analyses/{id}/findings/export` | CSV |
 
-Перевірити логи:
-```bash
-docker compose logs -f node
-```
+All endpoints accept `?lang=en|uk`. Uploads are rate-limited per IP.
 
-> ⚠️ Якщо бачиш помилку:
-> `bind: address already in use 5173`
-> — порт зайнятий. Варіанти:
->
-> 1) Зупини інший процес/контейнер на 5173:
-> ```bash
-> lsof -i :5173
-> ```
-> 2) Або зміни порт у `docker-compose.yml` для `node` (наприклад на 5174):
-> - ports: `"5174:5173"`
-> - або зміни `--port 5173` на `--port 5174` і пробрось `"5174:5174"`.
+## Deployment
 
----
+`docker/prod/Dockerfile` builds a single self-contained image — frontend assets
+compiled, dependencies installed without dev packages, SQLite for the app's own
+storage — used by the Railway deployment behind the demo link.
 
-## 6) Scheduler (очистка тимчасових файлів)
+## Licence
 
-Проект використовує команду:
-- `analyses:cleanup` — очищення storage (наприклад `storage/app/analyses/...`)
-
-### 6.1 Перевірити, що команда існує
-```bash
-docker compose exec app php artisan list | grep analyses
-```
-
-### 6.2 Запустити вручну
-```bash
-docker compose exec app php artisan analyses:cleanup
-```
-
-### 6.3 Автозапуск по schedule (Laravel 11)
-Scheduling налаштовується в `routes/console.php`.
-
-Приклад:
-```php
-use Illuminate\Support\Facades\Schedule;
-
-Schedule::command('analyses:cleanup')->dailyAt('03:10');
-```
-
-Контейнер `scheduler` (якщо є) має запускати:
-```bash
-php artisan schedule:work
-```
-
-Подивитися логи scheduler:
-```bash
-docker compose logs -f scheduler
-```
-
----
-
-## 7) Queue worker (аналіз асинхронно)
-
-Worker піднятий як сервіс `queue`:
-- `php artisan queue:work --sleep=1 --tries=1 --timeout=0`
-
-Логи:
-```bash
-docker compose logs -f queue
-```
-
-Перезапуск:
-```bash
-docker compose restart queue
-```
-
----
-
-## 8) Доступи / URL
-
-- **Backend через nginx**: http://localhost:8085
-- **Vite dev server**: http://localhost:5173
-- **MySQL (з хоста)**: `127.0.0.1:3307` (порт прокинутий назовні)
-- **Redis (з хоста)**: `127.0.0.1:6380`
-
----
-
-## 9) Перевірка API
-
-### 9.1 Створення аналізу (upload)
-API очікує multipart/form-data:
-- `file` — файл БД (наприклад `.db` або `.zip`)
-- `profile` — профіль перевірок (наприклад `basic`)
-
-Приклад через curl:
-```bash
-curl -X POST http://localhost:8085/api/analyses \
-  -F "file=@/path/to/test.db" \
-  -F "profile=basic"
-```
-
-### 9.2 Перевірка статусу
-```bash
-curl http://localhost:8085/api/analyses/<ID>
-```
-
----
-
-## 10) Типові проблеми
-
-### 10.1 “service db is not running”
-У docker-compose сервіс називається **mysql**, не `db`.
-Правильно:
-```bash
-docker compose exec mysql mysql -ucheck_adm -p"<PASSWORD_FROM_COMPOSE>" -D check_db -e "SHOW TABLES;"
-```
-
-### 10.2 502/503
-Дивись логи:
-```bash
-docker compose logs -f nginx
-docker compose logs -f app
-```
-
----
-
-## 11) Корисні команди
-
-Очистити кеші Laravel:
-```bash
-docker compose exec app php artisan optimize:clear
-```
-
-Зайти в контейнер:
-```bash
-docker compose exec app bash
-```
-
-Перебудувати образи:
-```bash
-docker compose build --no-cache
-docker compose up -d
-```
-
-Зупинити все:
-```bash
-docker compose down
-```
-
-Зупинити та видалити volumes (УВАГА: видалить дані MySQL):
-```bash
-docker compose down -v
-```
-
----
-
-## 12) Ready-check (швидкий чек-лист)
-
-1) `docker compose up -d` ✅
-2) `docker compose exec app composer install` ✅
-3) `docker compose exec app php artisan key:generate` ✅
-4) `docker compose exec app php artisan migrate` ✅
-5) Відкривається http://localhost:8085 ✅
-6) Відкривається http://localhost:5173 ✅
-7) `queue` сервіс працює (`docker compose logs -f queue` без FAIL) ✅
+MIT

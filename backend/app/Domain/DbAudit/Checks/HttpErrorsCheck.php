@@ -38,7 +38,7 @@ class HttpErrorsCheck extends BaseCheck
 
         $rows = $db->query(
             'SELECT * FROM "error_pages" WHERE "error_code" IS NOT NULL'
-            . ' ORDER BY CAST("error_code" AS INTEGER) DESC LIMIT ' . $res->limit
+            .' ORDER BY CAST("error_code" AS INTEGER) DESC LIMIT '.$res->limit
         );
 
         foreach ($rows as $row) {

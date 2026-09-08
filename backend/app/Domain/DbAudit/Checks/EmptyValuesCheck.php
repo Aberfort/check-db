@@ -48,7 +48,7 @@ class EmptyValuesCheck extends BaseCheck
             }
 
             $counts = $db->query(
-                'SELECT ' . implode(', ', $selects) . ' FROM ' . $db->quoteIdent($table)
+                'SELECT '.implode(', ', $selects).' FROM '.$db->quoteIdent($table)
             )[0] ?? [];
 
             foreach ($columns as $i => $column) {

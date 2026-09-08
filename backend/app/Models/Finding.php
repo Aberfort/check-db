@@ -34,6 +34,6 @@ class Finding extends Model
     /** Render this finding in the requested locale. */
     public function message(?string $locale = null): string
     {
-        return (string) __('findings.' . $this->message_key, $this->message_params ?? [], $locale);
+        return (string) __('findings.'.$this->message_key, $this->message_params ?? [], $locale);
     }
 }
