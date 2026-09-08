@@ -3,8 +3,11 @@ set -e
 
 cd /var/www/html
 
-mkdir -p database storage/framework/cache storage/framework/sessions storage/framework/views storage/logs bootstrap/cache
-touch database/database.sqlite
+mkdir -p database storage/framework/cache storage/framework/sessions storage/framework/views storage/logs bootstrap/cache storage/app
+
+DB_PATH="${DB_DATABASE:-/var/www/html/database/database.sqlite}"
+mkdir -p "$(dirname "$DB_PATH")"
+touch "$DB_PATH"
 
 php artisan config:clear
 php artisan migrate --force
