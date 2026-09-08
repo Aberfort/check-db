@@ -1,1 +1,3 @@
 *.sqlite*
+# The sample database is a fixture the app ships with, not local state.
+!samples/*.sqlite
