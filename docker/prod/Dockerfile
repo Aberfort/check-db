@@ -4,10 +4,12 @@
 
 FROM node:20-alpine AS frontend
 WORKDIR /app
-COPY backend/package.json backend/package-lock.json ./
-# `npm ci` installs only the platform variants recorded in the lockfile, and
-# rollup ships its binary as a per-platform optional dependency — so a lockfile
-# written on one architecture breaks the build on another.
+# The lockfile is deliberately not copied. rollup ships its native binary as a
+# per-platform optional dependency, and a lockfile only ever records the nodes
+# for the machine that wrote it — so `npm ci` here would fail on any
+# architecture other than the one the lockfile came from (npm/cli#4828). The
+# lockfile still pins local development; the version ranges pin this build.
+COPY backend/package.json ./
 RUN npm install --no-audit --no-fund
 COPY backend/ ./
 RUN npm run build

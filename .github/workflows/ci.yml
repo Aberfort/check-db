@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  backend:
+  tests:
     name: Tests
     runs-on: ubuntu-latest
 
@@ -36,35 +36,13 @@ jobs:
       - name: Check formatting
         run: vendor/bin/pint --test
 
-  frontend:
-    name: Build
-    runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: backend
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-
-      # See docker/prod/Dockerfile — rollup's per-platform binary is an optional
-      # dependency that `npm ci` will not resolve across architectures.
-      - run: npm install --no-audit --no-fund
-      - run: npm run build
-
   image:
-    name: Docker image
+    name: Production image
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      # The production image is what actually ships, so a broken Dockerfile
-      # should fail here rather than at deploy time.
+      # Builds the frontend too, so a broken asset build fails here rather than
+      # at deploy time — which is why there is no separate frontend job.
       - run: docker build -f docker/prod/Dockerfile .
