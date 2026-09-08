@@ -6,7 +6,6 @@ use App\Domain\DbAudit\Adapters\SqliteAdapter;
 use App\Domain\DbAudit\Contracts\DbInputPreparer;
 use App\Domain\DbAudit\Services\AnalysisRunner;
 use App\Domain\DbAudit\Services\CheckFactory;
-use App\Domain\DbAudit\Services\RemoteSettingsStore;
 use App\Models\Analysis;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -15,176 +14,59 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Storage;
 use PDO;
+use RuntimeException;
 use Throwable;
 
 class ProcessAnalysisJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
+    /** Progress reserved for opening and preparing the file, before checks start. */
+    private const PREPARE_PROGRESS = 10;
+
     public function __construct(public int $analysisId) {}
 
-    public function handle(): void
-    {
+    public function handle(
+        DbInputPreparer $preparer,
+        CheckFactory $checkFactory,
+        AnalysisRunner $runner,
+    ): void {
         $analysis = Analysis::query()->findOrFail($this->analysisId);
 
-        // щоб finally був безпечний
-        $prepared = ['path' => null, 'cleanup_paths' => []];
+        $cleanupPaths = [];
 
         try {
-            $analysis->update(['status' => 'processing', 'progress' => 5]);
+            $analysis->update(['status' => 'processing', 'progress' => 1]);
 
             $disk = Storage::disk('local');
 
-            $isRemote = ($analysis->ingest ?? null) === 'remote' || !empty($analysis->remote_url);
-
-            if (!$isRemote) {
-                $uploadedAbs = $analysis->stored_path ? $disk->path($analysis->stored_path) : null;
-                if (!$uploadedAbs || !is_file($uploadedAbs)) {
-                    throw new \RuntimeException('Файл БД не знайдено у storage.');
-                }
-            } else {
-                if (empty($analysis->remote_url)) {
-                    throw new \RuntimeException('Remote URL не задано.');
-                }
+            if (! $analysis->stored_path || ! is_file($disk->path($analysis->stored_path))) {
+                throw new RuntimeException('Uploaded database file is missing from storage.');
             }
 
-            /** @var DbInputPreparer $preparer */
-            $preparer = app(DbInputPreparer::class);
+            $prepared = $preparer->prepare($analysis, $analysis->stored_path, (string) $analysis->original_name);
+            $cleanupPaths = $prepared['cleanup_paths'];
 
-            $headers = is_array($analysis->remote_headers) ? $analysis->remote_headers : [];
-            if (!$headers) {
-                /** @var RemoteSettingsStore $store */
-                $store = app(RemoteSettingsStore::class);
-                $cfg = $store->get();
-                if (!empty($cfg['bearer'])) {
-                    $headers = ['Authorization' => 'Bearer ' . (string) $cfg['bearer']];
-                } elseif (!empty($cfg['basic_user'])) {
-                    $headers = [
-                        'Authorization' => 'Basic ' . base64_encode(
-                                (string) $cfg['basic_user'] . ':' . (string) ($cfg['basic_pass'] ?? '')
-                            ),
-                    ];
-                }
+            $absolutePath = $disk->path($prepared['path']);
+            if (! is_file($absolutePath)) {
+                throw new RuntimeException('Prepared database file could not be opened.');
             }
 
-            if ($isRemote && $headers && empty($analysis->remote_headers)) {
-                $analysis->update(['remote_headers' => $headers]);
-                $analysis->refresh();
-            }
+            $analysis->update(['progress' => self::PREPARE_PROGRESS]);
 
-            $sourcePathOrUrl = $isRemote ? $analysis->remote_url : $analysis->stored_path;
-            $sourceName = $analysis->original_name ?: ($isRemote ? 'remote.db' : null);
+            $db = new SqliteAdapter($this->connect($absolutePath));
+            $checks = $checkFactory->forProfile($analysis->profile);
 
-            $prepared = $preparer->prepare($analysis, $sourcePathOrUrl, $sourceName);
-
-            // PDO треба абсолютний шлях
-            $dbAbs = $disk->path($prepared['path']);
-            if (!is_file($dbAbs)) {
-                throw new \RuntimeException('Підготовлена БД не знайдена у storage.');
-            }
-
-            $pdo = new PDO('sqlite:' . $dbAbs, null, null, [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            ]);
-
-            $analysis->update(['progress' => 15]);
-
-            $db = new SqliteAdapter($pdo);
-
-            // tables + counts
-            $tableNames = $db->listTables();
-            $analysis->update(['progress' => 25]);
-
-            $counts = [];
-            foreach ($tableNames as $i => $t) {
-                $counts[$t] = $db->count($t);
-
+            $summary = $runner->run($analysis, $db, $checks, function (int $percent) use ($analysis): void {
                 $analysis->update([
-                    'progress' => 25 + (int) floor((($i + 1) / max(1, count($tableNames))) * 15), // 25..40
+                    'progress' => self::PREPARE_PROGRESS
+                        + (int) round($percent * (100 - self::PREPARE_PROGRESS) / 100),
                 ]);
-            }
-
-            // checks
-            $analysis->update(['progress' => 40]);
-
-            $profile = $analysis->profile ?: 'basic';
-
-            // профіль -> keys
-            $keys = config("db_audit.profiles.$profile.checks");
-            if (!is_array($keys) || empty($keys)) {
-                $keys = config('db_audit.profiles.basic.checks', []);
-            }
-
-            /** @var CheckFactory $factory */
-            $factory = app(CheckFactory::class);
-
-            // в CheckFactory має бути byKeys()
-            $checks = method_exists($factory, 'byKeys')
-                ? $factory->byKeys($keys)
-                : (method_exists($factory, 'makeAll') ? $factory->makeAll() : []);
-
-            if (empty($checks)) {
-                throw new \RuntimeException('Список checks порожній (перевір config/db_audit.php profiles/checks та CheckFactory).');
-            }
-
-            $runner = new AnalysisRunner();
-            $checksSummary = $runner->run($analysis, $db, $checks);
-
-            $analysis->update(['progress' => 95]);
-
-            $totalRows = array_sum($counts);
-            $totalChecks = (int) ($checksSummary['overview']['total_checks'] ?? 0);
-
-            $sev = $checksSummary['severity'] ?? ['ok' => 0, 'warning' => 0, 'critical' => 0];
-
-            $warn = (int) ($sev['warning'] ?? 0);
-            $crit = (int) ($sev['critical'] ?? 0);
-
-            $totalIssues = $warn + $crit;
-
-            $okRows = max(0, $totalRows - $totalIssues);
-
-            // Weighted health score by % of rows with issues
-            $weightedIssues = ($crit * 1.0) + ($warn * 0.5);
-            $weightedPct = ($weightedIssues / max(1, $totalRows)) * 100;
-
-            $score = (int) max(0, min(100, round(100 - $weightedPct)));
-            $label = $score >= 90 ? 'OK' : ($score >= 70 ? 'Warning' : 'Critical');
-
-            $analysis->update(['score' => $score]);
-
-            $summary = [
-                'overview' => [
-                    'total_tables' => count($tableNames),
-                    'total_rows' => $totalRows,
-                    'total_checks' => $totalChecks,
-                    'total_issues' => $totalIssues,
-                    'error_percent' => $totalRows > 0 ? (int) round(($totalIssues / $totalRows) * 100) : 0,
-                ],
-                'tables' => [
-                    'names' => $tableNames,
-                    'row_counts' => $counts,
-                ],
-                'issues_by_type' => $checksSummary['issues_by_type'] ?? [],
-                'severity' => [
-                    'ok' => $okRows,
-                    'warning' => $warn,
-                    'critical' => $crit,
-                ],
-
-                'health' => [
-                    'score' => $score,
-                    'label' => $label,
-                ],
-
-                // корисно для фронта
-                'profile' => $profile,
-                'enabled_checks' => $keys,
-            ];
+            });
 
             $analysis->update([
                 'summary' => $summary,
+                'score' => $summary['health']['score'],
                 'progress' => 100,
                 'status' => 'success',
                 'error_message' => null,
@@ -200,10 +82,26 @@ class ProcessAnalysisJob implements ShouldQueue
 
             throw $e;
         } finally {
-            // чистимо тільки тимчасові папки (zip)
-            foreach (($prepared['cleanup_paths'] ?? []) as $p) {
-                Storage::disk('local')->deleteDirectory($p);
+            foreach ($cleanupPaths as $path) {
+                Storage::disk('local')->deleteDirectory($path);
             }
         }
+    }
+
+    /**
+     * The file is attacker-supplied, so the connection stays read-only and never
+     * follows the database into other files.
+     */
+    private function connect(string $absolutePath): PDO
+    {
+        $pdo = new PDO('sqlite:' . $absolutePath, null, null, [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        ]);
+
+        $pdo->exec('PRAGMA query_only = ON');
+        $pdo->exec('PRAGMA trusted_schema = OFF');
+
+        return $pdo;
     }
 }

@@ -3,131 +3,87 @@
 namespace App\Domain\DbAudit\Checks;
 
 use App\Domain\DbAudit\Contracts\DbAdapter;
-use App\Domain\DbAudit\Contracts\DbCheck;
 use App\Domain\DbAudit\DTO\CheckFinding;
 use App\Domain\DbAudit\DTO\CheckResult;
+use App\Domain\DbAudit\DTO\Severity;
 
-class ContentKeywordsCheck implements DbCheck
+/**
+ * Part of the optional crawl-export preset: crawlers record their own diagnostics
+ * as literal strings ("H1 not found"), so those columns are scanned for them.
+ */
+class ContentKeywordsCheck extends BaseCheck
 {
     public function key(): string
     {
         return 'content_keywords';
     }
 
-    public function title(): string
+    public function weight(): float
     {
-        return 'Content keywords';
+        return 1.5;
     }
 
     public function run(DbAdapter $db): CheckResult
     {
-        $result = new CheckResult($this->key(), $this->title());
+        $res = $this->result();
 
-        $cfg = (array) config('db_audit.content_keywords', []);
+        $config = (array) config('db_audit.content_keywords', []);
+        $needles = array_values(array_filter((array) ($config['needles'] ?? []), 'is_string'));
+        $wanted = array_values(array_filter((array) ($config['columns'] ?? []), 'is_string'));
 
-        $needles = array_values(array_filter((array) ($cfg['needles'] ?? []), fn($v) => is_string($v) && $v !== ''));
-        $columnsWanted = array_values(array_filter((array) ($cfg['columns'] ?? []), fn($v) => is_string($v) && $v !== ''));
-
-        $maxTotal = (int) ($cfg['max_findings_total'] ?? 5000);
-        $maxPerTable = (int) ($cfg['max_findings_per_table'] ?? 800);
-
-        if ($maxTotal <= 0) $maxTotal = 1;
-        if ($maxPerTable <= 0) $maxPerTable = 1;
-
-        if (!$needles || !$columnsWanted) {
-            return $result;
+        if ($needles === [] || $wanted === []) {
+            return $res->skip();
         }
 
-        if (!method_exists($db, 'listColumns')) {
-            throw new \RuntimeException('SqliteAdapter::listColumns() is required for ContentKeywordsCheck');
-        }
+        $scannedAnything = false;
 
-        $tables = $db->listTables();
-        $total = 0;
-
-        foreach ($tables as $table) {
-            if ($total >= $maxTotal) break;
-
-            $colsInfo = (array) $db->listColumns($table);
-            if (!$colsInfo) continue;
-
-            $cols = array_values(array_filter(array_map(
-                fn($r) => is_array($r) ? ($r['name'] ?? null) : null,
-                $colsInfo
-            )));
-
-            if (!$cols) continue;
-
-            $colSet = array_fill_keys($cols, true);
-
-            // які колонки реально є в цій таблиці
-            $scanCols = [];
-            foreach ($columnsWanted as $c) {
-                if (isset($colSet[$c])) $scanCols[] = $c;
+        $this->forEachTable($db, function (string $table) use ($db, $res, $needles, $wanted, &$scannedAnything): void {
+            if ($res->isAtLimit()) {
+                return;
             }
-            if (!$scanCols) continue;
 
-            $hasEndpoint = isset($colSet['endpoint']);
-            $tableFindings = 0;
+            $available = array_column($db->listColumns($table), 'name');
+            $columns = array_values(array_intersect($wanted, $available));
 
-            foreach ($scanCols as $col) {
-                if ($total >= $maxTotal || $tableFindings >= $maxPerTable) break;
+            if ($columns === []) {
+                return;
+            }
 
+            $scannedAnything = true;
+            $hasEndpoint = in_array('endpoint', $available, true);
+
+            foreach ($columns as $column) {
                 foreach ($needles as $needle) {
-                    if ($total >= $maxTotal || $tableFindings >= $maxPerTable) break;
-
-                    $t = $this->qi($table);
-                    $c = $this->qi($col);
-
-                    $selectCols = 'rowid as __rowid, ' . $c . ' as __value';
-                    if ($hasEndpoint) {
-                        $selectCols = 'rowid as __rowid, ' . $this->qi('endpoint') . ' as endpoint, ' . $c . ' as __value';
+                    if ($res->isAtLimit()) {
+                        return;
                     }
 
-                    $sql = 'SELECT ' . $selectCols . ' FROM ' . $t . ' WHERE CAST(' . $c . ' AS TEXT) LIKE ? LIMIT ?';
-                    $rows = $db->select($sql, ['%' . $needle . '%', $maxPerTable]);
+                    $select = $hasEndpoint ? '"endpoint" AS endpoint, ' : '';
 
-                    foreach ((array) $rows as $r) {
-                        if ($total >= $maxTotal || $tableFindings >= $maxPerTable) break;
+                    $rows = $db->query(
+                        'SELECT ' . $select . $db->quoteIdent($column) . ' AS value FROM ' . $db->quoteIdent($table)
+                        . ' WHERE CAST(' . $db->quoteIdent($column) . ' AS TEXT) LIKE :needle LIMIT 50',
+                        [':needle' => '%' . $needle . '%']
+                    );
 
-                        $endpoint = $hasEndpoint ? (string) ($r['endpoint'] ?? '') : '';
-                        $rowRef = ($hasEndpoint && $endpoint !== '')
-                            ? ['endpoint' => $endpoint]
-                            : ['rowid' => (int) ($r['__rowid'] ?? 0)];
+                    foreach ($rows as $row) {
+                        $endpoint = trim((string) ($row['endpoint'] ?? ''));
 
-                        $value = array_key_exists('__value', $r) ? (string) $r['__value'] : null;
-
-                        $result->add(new CheckFinding(
-                            severity: 'critical',
-                            message: $needle,
+                        $res->add(new CheckFinding(
+                            severity: Severity::WARNING,
+                            messageKey: 'content_keywords.match',
+                            params: ['issue' => $needle, 'table' => $table, 'column' => $column],
                             table: $table,
-                            column: $col,
-                            rowRef: $rowRef,
-                            meta: [
-                                'needle' => $needle,
-                                'value' => $value,
-                            ],
+                            column: $column,
+                            rowRef: $endpoint !== '' ? ['endpoint' => $endpoint] : null,
+                            meta: ['needle' => $needle, 'endpoint' => $endpoint ?: null],
+                            bucket: mb_substr($needle, 0, 64),
                         ));
-
-                        $total++;
-                        $tableFindings++;
                     }
                 }
             }
-        }
+        });
 
-        return $result;
-    }
-
-    /**
-     * Quote identifier safely for SQLite: "name"
-     */
-    private function qi(string $name): string
-    {
-        if (!preg_match('/^[A-Za-z0-9_]+$/', $name)) {
-            $name = str_replace('"', '""', $name);
-            return '"' . $name . '"';
-        }
-        return '"' . $name . '"';
+        return $scannedAnything ? $res : $res->skip();
     }
 }

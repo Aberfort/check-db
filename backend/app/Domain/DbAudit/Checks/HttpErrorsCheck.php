@@ -3,76 +3,71 @@
 namespace App\Domain\DbAudit\Checks;
 
 use App\Domain\DbAudit\Contracts\DbAdapter;
-use App\Domain\DbAudit\Contracts\DbCheck;
 use App\Domain\DbAudit\DTO\CheckFinding;
 use App\Domain\DbAudit\DTO\CheckResult;
+use App\Domain\DbAudit\DTO\Severity;
 
-class HttpErrorsCheck implements DbCheck
+/**
+ * Part of the optional crawl-export preset: reads an `error_pages` table if the
+ * uploaded database happens to have one, and skips silently otherwise.
+ */
+class HttpErrorsCheck extends BaseCheck
 {
-    public function key(): string { return 'http_errors'; }
-    public function title(): string { return 'HTTP errors (error_pages)'; }
+    public function key(): string
+    {
+        return 'http_errors';
+    }
+
+    public function weight(): float
+    {
+        return 2.0;
+    }
 
     public function run(DbAdapter $db): CheckResult
     {
-        $res = new CheckResult($this->key(), $this->title());
+        $res = $this->result();
 
-        $tables = $db->listTables();
-        if (!in_array('error_pages', $tables, true)) {
-            return $res;
+        if (! $db->tableExists('error_pages')) {
+            return $res->skip();
         }
 
-        // endpoint | error_code | error_reason | error_text
-        $rows = $db->query("
-    SELECT endpoint, error_code, error_reason, error_text
-    FROM error_pages
-    WHERE error_code IS NOT NULL
-    ORDER BY CAST(error_code AS INTEGER) ASC
-");
+        $available = array_column($db->listColumns('error_pages'), 'name');
+        if (! in_array('error_code', $available, true)) {
+            return $res->skip();
+        }
 
-        foreach ($rows as $r) {
-            $code = (int) ($r['error_code'] ?? 0);
-            if ($code <= 0) continue;
+        $rows = $db->query(
+            'SELECT * FROM "error_pages" WHERE "error_code" IS NOT NULL'
+            . ' ORDER BY CAST("error_code" AS INTEGER) DESC LIMIT ' . $res->limit
+        );
 
-            $reason = trim((string)($r['error_reason'] ?? ''));
-            $endpoint = trim((string)($r['endpoint'] ?? ''));
+        foreach ($rows as $row) {
+            $code = (int) ($row['error_code'] ?? 0);
 
-            $sev = $this->severityFor($code);
+            // 2xx rows are healthy pages; they are not findings.
+            if ($code < 300) {
+                continue;
+            }
 
-            $text = (string)($r['error_text'] ?? '');
-            $text = $this->truncate($text, 800);
-
-            $msg = 'HTTP ' . $code . ($reason ? (' ' . $reason) : '');
+            $endpoint = trim((string) ($row['endpoint'] ?? ''));
+            $reason = trim((string) ($row['error_reason'] ?? ''));
 
             $res->add(new CheckFinding(
-                severity: $sev,
-                message: $msg,
+                severity: $code >= 400 ? Severity::CRITICAL : Severity::WARNING,
+                messageKey: 'http_errors.response',
+                params: ['code' => $code, 'reason' => $reason, 'endpoint' => $endpoint],
                 table: 'error_pages',
                 column: 'error_code',
-                rowRef: $endpoint ? ['endpoint' => $endpoint] : null,
+                rowRef: $endpoint !== '' ? ['endpoint' => $endpoint] : null,
                 meta: [
                     'http_code' => $code,
                     'reason' => $reason ?: null,
                     'endpoint' => $endpoint ?: null,
-                    'error_text' => $text ?: null,
                 ],
+                bucket: (string) $code,
             ));
         }
 
         return $res;
-    }
-
-    private function severityFor(int $code): string
-    {
-        if ($code >= 200 && $code <= 299) return 'ok';
-        if ($code >= 300 && $code <= 399) return 'warning';
-        return 'critical';
-    }
-
-    private function truncate(string $s, int $max): string
-    {
-        $s = trim($s);
-        if ($s === '') return '';
-        if (mb_strlen($s) <= $max) return $s;
-        return mb_substr($s, 0, $max) . '…';
     }
 }

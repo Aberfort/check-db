@@ -1,19 +1,18 @@
 <?php
 
-use App\Http\Controllers\AnalysisRemoteByIdController;
 use App\Http\Controllers\Api\AnalysisController;
-use App\Http\Controllers\RemoteDbListController;
-use App\Http\Controllers\SettingsRemoteDbController;
+use App\Http\Controllers\Api\MetaController;
 use Illuminate\Support\Facades\Route;
 
-Route::post('/analyses', [AnalysisController::class, 'store']);
-Route::get('/analyses/{analysis}', [AnalysisController::class, 'show']);
-Route::get('/analyses/{analysis}/findings', [AnalysisController::class, 'findings']);
-Route::get('/analyses/{analysis}/findings/export', [AnalysisController::class, 'exportFindings']);
-Route::get('/analyses/{analysis}/events', [AnalysisController::class, 'events']);
+Route::get('/meta', MetaController::class);
 
-Route::get('/settings/remote-db', [SettingsRemoteDbController::class, 'show']);
-Route::put('/settings/remote-db', [SettingsRemoteDbController::class, 'update']);
+Route::post('/analyses', [AnalysisController::class, 'store'])
+    ->middleware('throttle:uploads');
 
-Route::get('/remote-dbs', [RemoteDbListController::class, 'index']);
-Route::post('/analyses/remote-by-id', [AnalysisRemoteByIdController::class, 'store']);
+Route::prefix('/analyses/{analysis}')->group(function () {
+    Route::get('/', [AnalysisController::class, 'show']);
+    Route::get('/events', [AnalysisController::class, 'events']);
+    Route::get('/findings', [AnalysisController::class, 'findings']);
+    Route::get('/findings/summary', [AnalysisController::class, 'findingsSummary']);
+    Route::get('/findings/export', [AnalysisController::class, 'exportFindings']);
+});

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Analysis extends Model
 {
@@ -20,5 +21,17 @@ class Analysis extends Model
 
     protected $casts = [
         'summary' => 'array',
+        'progress' => 'integer',
+        'score' => 'integer',
     ];
+
+    public function findings(): HasMany
+    {
+        return $this->hasMany(Finding::class);
+    }
+
+    public function isFinished(): bool
+    {
+        return in_array($this->status, ['success', 'error'], true);
+    }
 }

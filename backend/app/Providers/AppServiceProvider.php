@@ -4,26 +4,22 @@ namespace App\Providers;
 
 use App\Domain\DbAudit\Contracts\DbInputPreparer;
 use App\Domain\DbAudit\Services\DbInputPreparerService;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     */
     public function register(): void
     {
-        $this->app->bind(
-            DbInputPreparer::class,
-            DbInputPreparerService::class
-        );
+        $this->app->bind(DbInputPreparer::class, DbInputPreparerService::class);
     }
 
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
     {
-        //
+        // Analysing an upload is expensive, so the public demo caps how often
+        // one client can start a run.
+        RateLimiter::for('uploads', fn (Request $request) => Limit::perMinute(10)->by($request->ip()));
     }
 }

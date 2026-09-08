@@ -3,77 +3,147 @@
 namespace App\Domain\DbAudit\Services;
 
 use App\Domain\DbAudit\Contracts\DbAdapter;
+use App\Domain\DbAudit\Contracts\DbCheck;
+use App\Domain\DbAudit\DTO\CheckResult;
+use App\Domain\DbAudit\DTO\Severity;
 use App\Models\Analysis;
 use App\Models\Finding;
+use Illuminate\Support\Carbon;
 
 class AnalysisRunner
 {
+    private const INSERT_CHUNK = 500;
+
+    public function __construct(private HealthScore $healthScore) {}
+
     /**
-     * @param array<int, object> $checks масив DbCheck (інстанси)
-     * @return array<string, mixed>
+     * @param  array<string, DbCheck>  $checks  keyed by check key
+     * @param  callable(int):void|null  $onProgress  receives 0..100 of the check phase
+     * @return array<string, mixed> the analysis summary
      */
-    public function run(Analysis $analysis, DbAdapter $db, array $checks): array
+    public function run(Analysis $analysis, DbAdapter $db, array $checks, ?callable $onProgress = null): array
     {
-        Finding::query()->where('analysis_id', $analysis->id)->delete();
+        $analysis->findings()->delete();
 
-        $issuesByType = [];
-        $severity = ['ok' => 0, 'warning' => 0, 'critical' => 0];
+        $schema = $this->readSchema($db);
 
-        $totalChecks = count($checks);
-        $completed = 0;
+        /** @var array<string, CheckResult> $results */
+        $results = [];
+        $severityTotals = array_fill_keys(Severity::ALL, 0);
+        $pending = [];
+        $done = 0;
 
-        foreach ($checks as $check) {
+        foreach ($checks as $key => $check) {
             $result = $check->run($db);
+            $results[$key] = $result;
 
-            $issuesByType[$result->checkKey] = [
-                'title' => $result->title,
-                'count' => count($result->findings),
-            ];
+            foreach ($result->findings as $finding) {
+                $severity = Severity::isValid($finding->severity) ? $finding->severity : Severity::WARNING;
+                $severityTotals[$severity]++;
 
-            foreach ($result->findings as $f) {
-                $sev = in_array($f->severity, ['ok', 'warning', 'critical'], true) ? $f->severity : 'warning';
-                $severity[$sev] = ($severity[$sev] ?? 0) + 1;
-
-                Finding::create([
+                $pending[] = [
                     'analysis_id' => $analysis->id,
-                    'check_key' => $result->checkKey,
-                    'severity' => $sev,
-                    'table_name' => $f->table,
-                    'column_name' => $f->column,
-                    'row_ref' => $f->rowRef,
-                    'message' => $f->message,
-                    'meta' => $f->meta,
-                ]);
+                    'check_key' => $key,
+                    'severity' => $severity,
+                    'table_name' => $finding->table,
+                    'column_name' => $finding->column,
+                    'row_ref' => $finding->rowRef ? json_encode($finding->rowRef, JSON_UNESCAPED_UNICODE) : null,
+                    'message_key' => $finding->messageKey,
+                    'message_params' => json_encode($finding->params, JSON_UNESCAPED_UNICODE),
+                    'bucket' => $finding->bucket,
+                    'meta' => $finding->meta ? json_encode($finding->meta, JSON_UNESCAPED_UNICODE) : null,
+                    'created_at' => Carbon::now(),
+                    'updated_at' => Carbon::now(),
+                ];
+
+                if (count($pending) >= self::INSERT_CHUNK) {
+                    Finding::insert($pending);
+                    $pending = [];
+                }
             }
 
-            $completed++;
-            $analysis->update([
-                'progress' => 20 + (int) floor(($completed / max(1, $totalChecks)) * 70), // 20..90
-            ]);
+            $done++;
+
+            if ($onProgress !== null) {
+                $onProgress((int) floor($done / max(1, count($checks)) * 100));
+            }
         }
 
-        $totalIssues = (int) (($severity['warning'] ?? 0) + ($severity['critical'] ?? 0));
+        if ($pending !== []) {
+            Finding::insert($pending);
+        }
 
-        // Health score (MVP): critical важить сильніше за warning
-        $crit = (int) ($severity['critical'] ?? 0);
-        $warn = (int) ($severity['warning'] ?? 0);
+        return $this->summarise($analysis, $schema, $results, $checks, $severityTotals);
+    }
 
-        $score = max(0, 100 - ($crit * 10) - ($warn * 2));
-        $label = $score >= 90 ? 'OK' : ($score >= 70 ? 'Warning' : 'Critical');
+    /** @return array{tables:string[], row_counts:array<string,int>, total_rows:int} */
+    private function readSchema(DbAdapter $db): array
+    {
+        $tables = $db->listTables();
+        $counts = [];
 
-        $analysis->update(['score' => $score]);
+        foreach ($tables as $table) {
+            try {
+                $counts[$table] = $db->count($table);
+            } catch (\Throwable) {
+                $counts[$table] = 0;
+            }
+        }
 
         return [
-            'issues_by_type' => $issuesByType,
-            'severity' => $severity,
-            'overview' => [
-                'total_checks' => $totalChecks,
-                'total_issues' => $totalIssues,
+            'tables' => $tables,
+            'row_counts' => $counts,
+            'total_rows' => array_sum($counts),
+        ];
+    }
+
+    /**
+     * @param  array<string, CheckResult>  $results
+     * @param  array<string, DbCheck>  $checks
+     * @param  array<string, int>  $severityTotals
+     * @return array<string, mixed>
+     */
+    private function summarise(
+        Analysis $analysis,
+        array $schema,
+        array $results,
+        array $checks,
+        array $severityTotals
+    ): array {
+        $checkSummary = [];
+
+        foreach ($results as $key => $result) {
+            $worst = $result->worstSeverity();
+
+            // Informational findings are observations, so a check that only
+            // produced those still counts as passing — same rule the score uses.
+            $failed = $worst !== null && $worst !== Severity::INFO;
+
+            $checkSummary[$key] = [
+                'status' => $result->skipped ? 'skipped' : ($failed ? 'failed' : 'passed'),
+                'findings' => count($result->findings),
+                'severity' => $worst,
+                'truncated' => $result->truncated,
+                'weight' => isset($checks[$key]) ? $checks[$key]->weight() : 1.0,
+            ];
+        }
+
+        return [
+            'schema' => [
+                'total_tables' => count($schema['tables']),
+                'total_rows' => $schema['total_rows'],
+                'tables' => $schema['tables'],
+                'row_counts' => $schema['row_counts'],
             ],
-            'health' => [
-                'score' => $score,
-                'label' => $label,
+            'checks' => $checkSummary,
+            'severity' => $severityTotals,
+            'totals' => [
+                'findings' => array_sum($severityTotals),
+                // Informational findings are observations, not problems to fix.
+                'issues' => $severityTotals[Severity::CRITICAL] + $severityTotals[Severity::WARNING],
             ],
+            'health' => $this->healthScore->compute($results, $checks),
+            'profile' => $analysis->profile,
         ];
     }
 }

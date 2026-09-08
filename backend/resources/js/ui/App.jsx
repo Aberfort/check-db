@@ -3,8 +3,6 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 
 import OverviewPage from './pages/OverviewPage.jsx'
-import SettingsPage from './pages/SettingsPage.jsx'
-import DatabasesPage from './pages/DatabasesPage.jsx'
 
 export default function App() {
     return (
@@ -25,8 +23,6 @@ export default function App() {
 
             <Routes>
                 <Route path="/" element={<OverviewPage />} />
-                <Route path="/databases" element={<DatabasesPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
         </>
