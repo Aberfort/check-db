@@ -16,6 +16,9 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AnalysisController extends Controller
 {
+    /** An event stream never outlives this, so a stalled run cannot hold a worker. */
+    private const STREAM_MAX_SECONDS = 300;
+
     public function store(UploadDbRequest $request): JsonResponse
     {
         $file = $request->file('file');
@@ -177,8 +180,10 @@ class AnalysisController extends Controller
     {
         return response()->stream(function () use ($analysis) {
             $lastPayload = null;
+            $deadline = time() + self::STREAM_MAX_SECONDS;
+            $tick = 0;
 
-            while (! connection_aborted()) {
+            while (! connection_aborted() && time() < $deadline) {
                 $fresh = $analysis->fresh();
 
                 if (! $fresh) {
@@ -191,16 +196,21 @@ class AnalysisController extends Controller
                     echo "event: analysis\n";
                     echo "data: {$payload}\n\n";
 
-                    @ob_flush();
-                    @flush();
-
                     $lastPayload = $payload;
+                } elseif ($tick % 20 === 0) {
+                    // A comment line keeps the socket warm and, more importantly,
+                    // makes PHP notice a client that has gone away.
+                    echo ": heartbeat\n\n";
                 }
+
+                @ob_flush();
+                @flush();
 
                 if ($fresh->isFinished()) {
                     break;
                 }
 
+                $tick++;
                 usleep(700_000);
             }
         }, 200, [
