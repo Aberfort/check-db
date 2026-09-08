@@ -1,6 +1,6 @@
-# Production image for a single-container demo deploy (e.g. Render.com free tier).
-# No nginx/php-fpm/redis/vite-dev-server here on purpose — the built-in PHP
-# server plus SQLite keeps this to one process and one free-tier service.
+# Single-container production image: compiled frontend assets, no dev
+# dependencies, SQLite for the app's own storage. No nginx, php-fpm, Redis or
+# Vite dev server, so the whole app is one process on one small instance.
 
 FROM node:20-alpine AS frontend
 WORKDIR /app

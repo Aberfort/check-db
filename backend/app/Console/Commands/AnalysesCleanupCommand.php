@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Storage;
 
 class AnalysesCleanupCommand extends Command
 {
-    protected $signature = 'analyses:cleanup {--dry-run : Тільки показати, що буде видалено}';
+    protected $signature = 'analyses:cleanup {--dry-run : List what would be removed without deleting}';
 
     protected $description = 'Cleanup old analyses: DB rows, findings, uploaded files';
 
