@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+backend/.env
+backend/.env.*
+backend/node_modules
+backend/vendor
+backend/public/hot
+backend/public/build
+backend/storage/*.key
+backend/storage/framework/cache/*
+backend/storage/framework/sessions/*
+backend/storage/framework/views/*
+backend/storage/logs/*
+backend/database/database.sqlite
