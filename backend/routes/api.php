@@ -6,8 +6,10 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/meta', MetaController::class);
 
-Route::post('/analyses', [AnalysisController::class, 'store'])
-    ->middleware('throttle:uploads');
+Route::middleware('throttle:uploads')->group(function () {
+    Route::post('/analyses', [AnalysisController::class, 'store']);
+    Route::post('/analyses/sample', [AnalysisController::class, 'storeSample']);
+});
 
 Route::prefix('/analyses/{analysis}')->group(function () {
     Route::get('/', [AnalysisController::class, 'show']);

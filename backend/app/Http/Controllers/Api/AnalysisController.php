@@ -10,6 +10,7 @@ use App\Models\Analysis;
 use App\Models\Finding;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -33,6 +34,36 @@ class AnalysisController extends Controller
         $analysis->update([
             'stored_path' => $file->storeAs("uploads/analyses/{$analysis->id}", "{$base}.{$extension}", 'local'),
         ]);
+
+        ProcessAnalysisJob::dispatch($analysis->id);
+
+        return response()->json(['data' => $this->present($analysis)], 201);
+    }
+
+    /** Runs the audit against the database bundled with the app. */
+    public function storeSample(Request $request): JsonResponse
+    {
+        $source = database_path('samples/shop-demo.sqlite');
+
+        abort_unless(is_file($source), 404, 'The sample database is not available.');
+
+        $profile = $request->input('profile');
+        $profiles = array_keys((array) config('db_audit.profiles', []));
+
+        $analysis = Analysis::create([
+            'status' => 'queued',
+            'progress' => 0,
+            'original_name' => 'shop-demo.sqlite',
+            'db_type' => 'sqlite',
+            'profile' => in_array($profile, $profiles, true)
+                ? $profile
+                : (string) config('db_audit.default_profile'),
+        ]);
+
+        $path = "uploads/analyses/{$analysis->id}/shop-demo.sqlite";
+        Storage::disk('local')->put($path, file_get_contents($source));
+
+        $analysis->update(['stored_path' => $path]);
 
         ProcessAnalysisJob::dispatch($analysis->id);
 

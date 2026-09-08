@@ -1,54 +1,54 @@
 import React from 'react'
-import { NavLink } from 'react-router-dom'
-import Container from './Container.jsx'
+import { useI18n } from '../i18n/I18nProvider.jsx'
+import { locales } from '../i18n/dictionaries.js'
+import useTheme from '../hooks/useTheme.js'
 
-function NavItem({ to, children }) {
-    return (
-        <NavLink
-            to={to}
-            className={({ isActive }) =>
-                [
-                    'rounded-lg px-3 py-2 text-sm font-semibold border transition',
-                    isActive
-                        ? 'bg-brand-50 text-brand border-brand-200/60'
-                        : 'bg-white text-ink/70 border-brand-200/60 hover:bg-brand-50',
-                ].join(' ')
-            }
-        >
-            {children}
-        </NavLink>
-    )
-}
+export default function AppHeader () {
+    const { t, locale, setLocale } = useI18n()
+    const { theme, toggle } = useTheme()
 
-export default function AppHeader({ right = null }) {
     return (
-        <header className="border-b border-brand-200/70 bg-brand-50/60 backdrop-blur">
-            <Container className="py-5 flex items-center justify-between gap-4">
+        <header className="border-b border-line bg-surface">
+            <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
                 <div className="min-w-0">
-                    <div className="text-sm text-brand-800/70">Database health checker</div>
-                    <div className="flex items-center gap-3">
-                        <h1 className="text-2xl font-extrabold tracking-tight text-ink">
-                            check-db <span className="text-brand">dashboard</span>
-                        </h1>
-
-                        <div className="hidden md:flex items-center gap-2">
-                            <NavItem to="/">Overview</NavItem>
-                            <NavItem to="/databases">Databases</NavItem>
-                            <NavItem to="/settings">Settings</NavItem>
-                        </div>
-                    </div>
+                    <p className="text-lg font-semibold tracking-tight text-ink">{t('app.name')}</p>
+                    <p className="truncate text-xs text-ink-muted">{t('app.tagline')}</p>
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <div className="md:hidden flex items-center gap-2">
-                        <NavItem to="/">Overview</NavItem>
-                        <NavItem to="/databases">DBs</NavItem>
-                        <NavItem to="/settings">⚙</NavItem>
+                    <div
+                        role="group"
+                        aria-label={t('nav.language')}
+                        className="flex overflow-hidden rounded-lg border border-line text-xs"
+                    >
+                        {locales.map((code) => (
+                            <button
+                                key={code}
+                                type="button"
+                                onClick={() => setLocale(code)}
+                                aria-pressed={locale === code}
+                                className={[
+                                    'px-2.5 py-1.5 font-semibold uppercase transition-colors',
+                                    locale === code
+                                        ? 'bg-brand text-brand-ink'
+                                        : 'text-ink-secondary hover:bg-brand-wash',
+                                ].join(' ')}
+                            >
+                                {code}
+                            </button>
+                        ))}
                     </div>
 
-                    {right}
+                    <button
+                        type="button"
+                        onClick={toggle}
+                        aria-label={t(theme === 'dark' ? 'nav.theme.light' : 'nav.theme.dark')}
+                        className="rounded-lg border border-line px-2.5 py-1.5 text-sm text-ink-secondary hover:bg-brand-wash"
+                    >
+                        <span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span>
+                    </button>
                 </div>
-            </Container>
+            </div>
         </header>
     )
 }

@@ -1,63 +1,38 @@
-async function parseJson(res) {
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(json?.message || 'Request failed')
-    return json
-}
+export function qs (params = {}) {
+    const search = new URLSearchParams()
 
-export async function getJson(url) {
-    const res = await fetch(url)
-    const json = await res.json().catch(() => ({}))
-
-    if (!res.ok) {
-        const err = new Error(json?.message || 'Request failed')
-        err.status = res.status
-        err.code = json?.code
-        err.payload = json
-        throw err
+    for (const [key, value] of Object.entries(params)) {
+        if (value === undefined || value === null || value === '') continue
+        search.set(key, String(value))
     }
 
-    return json
+    const query = search.toString()
+
+    return query ? `?${query}` : ''
 }
 
-export async function postForm(url, formData) {
-    const res = await fetch(url, { method: 'POST', body: formData })
-    const json = await res.json().catch(() => ({}))
+async function unwrap (response) {
+    const body = await response.json().catch(() => ({}))
 
-    if (!res.ok) {
-        const err = new Error(json?.message || 'Request failed')
-        err.status = res.status
-        err.code = json?.code
-        err.payload = json
-        throw err
+    if (!response.ok) {
+        const error = new Error(body?.error?.message || 'Request failed')
+        error.status = response.status
+        error.code = body?.error?.code
+        error.validation = body?.errors
+        throw error
     }
 
-    return json
+    return body
 }
 
-export async function postJson(url, body = {}) {
-    const res = await fetch(url, {
+export async function getJson (url) {
+    return unwrap(await fetch(url, { headers: { Accept: 'application/json' } }))
+}
+
+export async function postForm (url, formData) {
+    return unwrap(await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    })
-    return parseJson(res)
-}
-
-export async function putJson(url, body = {}) {
-    const res = await fetch(url, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    })
-    return parseJson(res)
-}
-
-export function qs(params = {}) {
-    const sp = new URLSearchParams()
-    Object.entries(params).forEach(([k, v]) => {
-        if (v === undefined || v === null || v === '' || v === 'all') return
-        sp.set(k, String(v))
-    })
-    const s = sp.toString()
-    return s ? `?${s}` : ''
+        headers: { Accept: 'application/json' },
+        body: formData,
+    }))
 }

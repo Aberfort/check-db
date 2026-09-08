@@ -1,29 +1,155 @@
 @import "tailwindcss";
 
-@source "../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php";
-@source "../../storage/framework/views/*.php";
 @source "../**/*.blade.php";
 @source "../**/*.js";
 @source "../**/*.jsx";
 
-/* Токени теми (v4 CSS-first) */
-@theme {
-    --color-brand-50:  #f3f6f5;
-    --color-brand-100: #e2ebe8;
-    --color-brand-200: #c3d6d0;
-    --color-brand-300: #9ebbb2;
-    --color-brand-400: #6f9588;
-    --color-brand:     #3f5850;
-    --color-brand-600: #365047;
-    --color-brand-700: #2f443d;
-    --color-brand-800: #273731;
-    --color-brand-900: #1f2b26;
+/*
+ * The toggle has to beat the OS setting in both directions, so dark values are
+ * declared twice: once behind prefers-color-scheme (guarded so an explicit
+ * light stamp still wins) and once behind the explicit dark stamp.
+ */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-    --color-ink:       #0f1a17;
-    --color-ink-2:     #162421;
+:root {
+  color-scheme: light;
+
+  --surface: #fcfcfb;
+  --surface-raised: #ffffff;
+  --page: #f9f9f7;
+
+  --ink: #0b0b0b;
+  --ink-secondary: #52514e;
+  --ink-muted: #898781;
+
+  --line: #e1e0d9;
+  --line-strong: #c3c2b7;
+
+  --brand: #3f5850;
+  --brand-ink: #ffffff;
+  --brand-wash: #eef2f0;
+
+  /* Data marks: categorical slot 1, stepped per mode. */
+  --series-1: #2a78d6;
+  --series-1-wash: #cde2fb;
+
+  /* Status palette — fixed, never themed. Always paired with an icon + label. */
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-critical: #d03b3b;
+  --status-info: #898781;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --surface: #1a1a19;
+    --surface-raised: #212120;
+    --page: #0d0d0d;
+
+    --ink: #ffffff;
+    --ink-secondary: #c3c2b7;
+    --ink-muted: #898781;
+
+    --line: #2c2c2a;
+    --line-strong: #383835;
+
+    --brand: #8fb3a6;
+    --brand-ink: #0d0d0d;
+    --brand-wash: #23302c;
+
+    --series-1: #3987e5;
+    --series-1-wash: #184f95;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --surface: #1a1a19;
+  --surface-raised: #212120;
+  --page: #0d0d0d;
+
+  --ink: #ffffff;
+  --ink-secondary: #c3c2b7;
+  --ink-muted: #898781;
+
+  --line: #2c2c2a;
+  --line-strong: #383835;
+
+  --brand: #8fb3a6;
+  --brand-ink: #0d0d0d;
+  --brand-wash: #23302c;
+
+  --series-1: #3987e5;
+  --series-1-wash: #184f95;
+}
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-raised: var(--surface-raised);
+  --color-page: var(--page);
+
+  --color-ink: var(--ink);
+  --color-ink-secondary: var(--ink-secondary);
+  --color-ink-muted: var(--ink-muted);
+
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-wash: var(--brand-wash);
+
+  --color-series-1: var(--series-1);
+  --color-series-1-wash: var(--series-1-wash);
+
+  --color-good: var(--status-good);
+  --color-warning: var(--status-warning);
+  --color-critical: var(--status-critical);
+  --color-info: var(--status-info);
+
+  --radius-card: 14px;
+  --shadow-card: 0 1px 2px rgb(11 11 11 / 0.04), 0 8px 24px rgb(11 11 11 / 0.06);
 }
 
 @layer base {
-    html, body { height: 100%; }
-    body { @apply bg-brand-50 text-ink; }
+  html {
+    height: 100%;
+  }
+
+  body {
+    min-height: 100%;
+    background-color: var(--page);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .card {
+    background-color: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+  }
+
+  /* Columns of numbers align; standalone display figures stay proportional. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
