@@ -35,6 +35,7 @@ services:
     working_dir: /var/www/html
     volumes:
       - ./backend:/var/www/html:delegated
+      - ./.env:/var/www/html/.env
     command: php artisan queue:work --sleep=1 --tries=1 --timeout=0
     depends_on:
       - app
@@ -84,6 +85,7 @@ services:
     working_dir: /var/www/html
     volumes:
       - ./backend:/var/www/html:delegated
+      - ./.env:/var/www/html/.env
     command: sh -c "php artisan schedule:work"
     depends_on:
       - app

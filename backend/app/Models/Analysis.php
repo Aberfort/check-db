@@ -12,6 +12,7 @@ class Analysis extends Model
         'original_name',
         'stored_path',
         'db_type',
+        'profile',
         'summary',
         'error_message',
         'score',
